@@ -10,6 +10,24 @@ function registerSetup(setup) {
 function main() {
   ctx.clearRect(0, 0, 1400, 750); //erase the screen so you can draw everything in it's most current position
 
+  gameFrame++;
+
+  if (introActive) {
+    drawIntro();
+    return;
+  }
+
+  gameplayFrame++;
+
+  drawPacmanBackground();
+
+  if (gambleActive) {
+    drawPowerGamble();
+    return;
+  }
+
+  updateCannonBarrage();
+
   if (shouldDrawGrid) {
     makeGrid();
   }
@@ -27,6 +45,8 @@ function main() {
   drawPlatforms();
   drawFakePlatforms();
   drawBadPlatforms();
+  drawPellets();
+  drawPowerCubes();
   drawProjectiles();
   drawCannons();
   drawCollectables();
@@ -40,10 +60,24 @@ function main() {
   projectileCollision(); //checks if the player is getting hit by a projectile in the next frame
   badPlatformCollision(); //checks if the player is touching a bad platform
   collectablesCollide(); //checks if player has touched a collectable
+  pelletsCollide();
+  powerCubesCollide();
+
+  drawScoreHud();
 
   animate(); //this changes halle's picture to the next frame so it looks animated.
   // debug()                   //debugging values. Comment this out when not debugging.
   drawRobot(); //this actually displays the image of the robot.
+  if (player.shieldActive) {
+    ctx.strokeStyle = "rgba(80, 220, 255, 0.9)";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(player.x + hitBoxWidth / 2, player.y + hitBoxHeight / 2, 48, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (barrageWarningActive || barrageActive) {
+    drawBarrageWarning();
+  }
 }
 
 function getJSON(url, callback) {
@@ -342,6 +376,10 @@ function projectileCollision() {
     return;
   }
 
+  if (player.onGround) {
+    player.doubleJumpUsed = false;
+  }
+
   for (var i = 0; i < projectiles.length; i++) {
     //this deletes any projectiles that go off the screen
     if (
@@ -359,6 +397,7 @@ function projectileCollision() {
 
     //collision with the player
     if (
+      !player.shieldActive &&
       projectiles[i].x < player.x + hitBoxWidth &&
       projectiles[i].x + projectiles[i].width > player.x &&
       projectiles[i].y < player.y + hitBoxHeight &&
@@ -371,7 +410,7 @@ function projectileCollision() {
 }
 
 function badPlatformCollision() {
-  if (currentAnimationType === animationTypes.frontDeath) {
+  if (currentAnimationType === animationTypes.frontDeath || player.shieldActive) {
     return;
   }
   for (var i = 0; i < badPlatforms.length; i++) {
@@ -417,11 +456,23 @@ function deathOfPlayer() {
 }
 
 function playerFrictionAndGravity() {
+  if (player.speedBoostFrames > 0) {
+    player.speedBoostFrames--;
+  }
+  if (player.powerModeFrames > 0) {
+    player.powerModeFrames--;
+    if (player.powerModeFrames === 0) {
+      player.doubleJumpAvailable = false;
+      player.doubleJumpUsed = false;
+      player.shieldActive = false;
+    }
+  }
   //max speed limiter for ground
-  if (player.speedX > maxSpeed) {
-    player.speedX = maxSpeed;
-  } else if (player.speedX < -maxSpeed) {
-    player.speedX = -maxSpeed;
+  var currentMaxSpeed = player.speedBoostFrames > 0 ? maxSpeed * 1.75 : maxSpeed;
+  if (player.speedX > currentMaxSpeed) {
+    player.speedX = currentMaxSpeed;
+  } else if (player.speedX < -currentMaxSpeed) {
+    player.speedX = -currentMaxSpeed;
   }
   //friction
   if (Math.abs(player.speedX) < 1) {
@@ -436,6 +487,347 @@ function playerFrictionAndGravity() {
 
   if (player.onGround === false) {
     player.speedY = player.speedY + gravity;
+  }
+}
+
+function drawPacmanBackground() {
+  ctx.fillStyle = "#080d2b";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.strokeStyle = "rgba(43, 103, 214, 0.42)";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(18, 42, canvas.width - 36, canvas.height - 68);
+  ctx.beginPath();
+  ctx.moveTo(18, 180);
+  ctx.lineTo(280, 180);
+  ctx.lineTo(280, 300);
+  ctx.lineTo(520, 300);
+  ctx.moveTo(600, 42);
+  ctx.lineTo(600, 170);
+  ctx.lineTo(840, 170);
+  ctx.lineTo(840, 42);
+  ctx.moveTo(1060, 180);
+  ctx.lineTo(1320, 180);
+  ctx.lineTo(1320, 300);
+  ctx.lineTo(1080, 300);
+  ctx.stroke();
+
+  ctx.fillStyle = "#ffe66d";
+  for (var dotX = 48; dotX < canvas.width - 30; dotX += 42) {
+    for (var dotY = 80; dotY < canvas.height - 25; dotY += 42) {
+      ctx.beginPath();
+      ctx.arc(dotX, dotY, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function startAudio() {
+  if (!audioContext) {
+    var AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+      audioContext = new AudioContextClass();
+    }
+  }
+  if (audioContext && audioContext.state === "suspended") {
+    audioContext.resume();
+  }
+}
+
+function playSound(kind) {
+  if (!audioContext) {
+    return;
+  }
+  var settings = {
+    collect: { frequency: 660, duration: 0.12, type: "square" },
+    pellet: { frequency: 880, duration: 0.06, type: "sine" },
+    explode: { frequency: 110, duration: 0.2, type: "sawtooth" },
+  }[kind];
+  if (!settings) {
+    return;
+  }
+  var oscillator = audioContext.createOscillator();
+  var gain = audioContext.createGain();
+  oscillator.type = settings.type;
+  oscillator.frequency.value = settings.frequency;
+  gain.gain.setValueAtTime(0.06, audioContext.currentTime);
+  gain.gain.exponentialRampToValueAtTime(
+    0.001,
+    audioContext.currentTime + settings.duration
+  );
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+  oscillator.start();
+  oscillator.stop(audioContext.currentTime + settings.duration);
+}
+
+function drawIntro() {
+  drawPacmanBackground();
+  var pulse = 0.65 + Math.sin(gameFrame * 0.08) * 0.2;
+  ctx.textAlign = "center";
+  ctx.font = "700 28px Trebuchet MS";
+  ctx.fillStyle = "#fff4c2";
+  ctx.fillText("Made by Ayden", canvas.width / 2, 165);
+  ctx.font = "700 42px Trebuchet MS";
+  ctx.fillText("The", canvas.width / 2, 230);
+  ctx.shadowColor = "rgba(255, 27, 55, " + pulse + ")";
+  ctx.shadowBlur = 24;
+  ctx.font = "900 92px Impact";
+  ctx.fillStyle = "#ff304f";
+  ctx.fillText("IMPOSSIBLE", canvas.width / 2, 330);
+  ctx.shadowBlur = 0;
+  ctx.font = "700 54px Trebuchet MS";
+  ctx.fillStyle = "#ffe66d";
+  ctx.fillText("Parkour", canvas.width / 2, 405);
+
+  for (var flame = 0; flame < 18; flame++) {
+    var flameX = canvas.width / 2 - 390 + flame * 46;
+    var flameHeight = 18 + ((gameFrame * 3 + flame * 17) % 25);
+    ctx.fillStyle = flame % 2 === 0 ? "#ff304f" : "#ff9f1c";
+    ctx.beginPath();
+    ctx.moveTo(flameX, 350);
+    ctx.lineTo(flameX + 15, 350 - flameHeight);
+    ctx.lineTo(flameX + 30, 350);
+    ctx.fill();
+  }
+
+  ctx.font = "600 20px Trebuchet MS";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText("Press any key to enter the maze", canvas.width / 2, 525);
+  ctx.textAlign = "left";
+}
+
+function drawScoreHud() {
+  ctx.fillStyle = "rgba(8, 13, 43, 0.88)";
+  ctx.fillRect(18, 8, 390, 30);
+  ctx.font = "600 16px Trebuchet MS";
+  ctx.fillStyle = "#ffe66d";
+  ctx.fillText("SCORE " + score, 32, 29);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(
+    "COLLECTIONS " + collectables.filter(function (item) { return item.collected; }).length + "/" + collectables.length,
+    155,
+    29
+  );
+  ctx.fillStyle = "#ff9f1c";
+  ctx.fillText("PELLETS " + pellets.filter(function (pellet) { return pellet.collected; }).length + "/" + pellets.length, 315, 29);
+}
+
+function drawPowerCubes() {
+  for (var i = 0; i < powerCubes.length; i++) {
+    var cube = powerCubes[i];
+    if (cube.collected) {
+      continue;
+    }
+    ctx.save();
+    ctx.translate(cube.x, cube.y);
+    ctx.rotate(cube.rotation);
+    ctx.fillStyle = "#ff9f1c";
+    ctx.strokeStyle = "#fff4c2";
+    ctx.lineWidth = 3;
+    ctx.fillRect(-cube.size / 2, -cube.size / 2, cube.size, cube.size);
+    ctx.strokeRect(-cube.size / 2, -cube.size / 2, cube.size, cube.size);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 22px Trebuchet MS";
+    ctx.textAlign = "center";
+    ctx.fillText("?", 0, 8);
+    ctx.restore();
+    cube.rotation += 0.04;
+  }
+  ctx.textAlign = "left";
+}
+
+function drawPowerGamble() {
+  var options = ["SPEED BOOST", "DOUBLE JUMP", "SHIELD", "RAINBOW MODE"];
+  var optionColors = ["#ff9f1c", "#4dd4ff", "#7dff8a", "#ff4de1"];
+  gambleElapsed++;
+  if (gambleElapsed >= gambleNextChange && gambleElapsed < 120) {
+    gambleRollIndex = (gambleRollIndex + 1) % options.length;
+    gambleNextChange = gambleElapsed + gambleInterval;
+    gambleInterval = Math.min(18, gambleInterval * 1.18);
+  }
+  var resultIndex = options.indexOf(powerUpLabel(gambleResult));
+  var displayIndex = gambleElapsed >= 120 ? resultIndex : gambleRollIndex;
+
+  ctx.fillStyle = "rgba(8, 13, 43, 0.94)";
+  ctx.fillRect(250, 135, 900, 430);
+  ctx.strokeStyle = optionColors[displayIndex];
+  ctx.lineWidth = 8;
+  ctx.strokeRect(250, 135, 900, 430);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "900 48px Impact";
+  ctx.fillText("POWER-UP ROLL", canvas.width / 2, 220);
+  ctx.font = "700 24px Trebuchet MS";
+  ctx.fillStyle = "#ffe66d";
+  ctx.fillText("LUCKY BLOCK ACTIVATED", canvas.width / 2, 265);
+  ctx.fillStyle = optionColors[displayIndex];
+  ctx.font = "900 58px Trebuchet MS";
+  ctx.fillText(options[displayIndex], canvas.width / 2, 380);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "600 20px Trebuchet MS";
+  ctx.fillText(gambleElapsed >= 120 ? "POWER-UP LOCKED IN!" : "ROLLING...", canvas.width / 2, 455);
+  ctx.textAlign = "left";
+
+  gambleFrames--;
+  if (gambleFrames <= 0) {
+    gambleActive = false;
+    applyPowerUp(gambleResult);
+  }
+}
+
+function powerUpLabel(type) {
+  return {
+    speed: "SPEED BOOST",
+    double: "DOUBLE JUMP",
+    shield: "SHIELD",
+    rainbow: "RAINBOW MODE",
+  }[type];
+}
+
+function createPowerCube(x, y) {
+  powerCubes.push({
+    x: x,
+    y: y,
+    size: 34,
+    rotation: 0,
+    collected: false,
+  });
+}
+
+function applyPowerUp(type) {
+  var duration = frameRate * 10;
+  if (type === "speed" || type === "rainbow") {
+    player.speedBoostFrames = duration;
+  }
+  if (type === "double" || type === "rainbow") {
+    player.doubleJumpAvailable = true;
+    player.doubleJumpUsed = false;
+    player.powerModeFrames = duration;
+  }
+  if (type === "shield" || type === "rainbow") {
+    player.shieldActive = true;
+    player.powerModeFrames = duration;
+  }
+  playSound("collect");
+}
+
+function powerCubesCollide() {
+  for (var i = 0; i < powerCubes.length; i++) {
+    var cube = powerCubes[i];
+    if (
+      !cube.collected &&
+      cube.x > player.x - cube.size &&
+      cube.x < player.x + hitBoxWidth + cube.size &&
+      cube.y > player.y - cube.size &&
+      cube.y < player.y + hitBoxHeight + cube.size
+    ) {
+      cube.collected = true;
+      var types = ["speed", "double", "shield", "rainbow"];
+      gambleResult = types[Math.floor(Math.random() * types.length)];
+      gambleFrames = 150;
+      gambleElapsed = 0;
+      gambleNextChange = 0;
+      gambleInterval = 2;
+      gambleRollIndex = Math.floor(Math.random() * types.length);
+      gambleActive = true;
+      score += 50;
+    }
+  }
+}
+
+function drawBarrageWarning() {
+  var warningPulse = 0.72 + Math.sin(gameFrame * 0.32) * 0.2;
+  ctx.fillStyle = "rgba(150, 0, 20, " + warningPulse + ")";
+  ctx.fillRect(130, 125, canvas.width - 260, 180);
+  ctx.strokeStyle = "#ffe66d";
+  ctx.lineWidth = 6;
+  ctx.strokeRect(130, 125, canvas.width - 260, 180);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "900 46px Impact";
+  ctx.fillText(
+    barrageWarningActive ? "CANNON BARRAGE INCOMING" : "CANNON BARRAGE",
+    canvas.width / 2,
+    185
+  );
+  ctx.fillStyle = "#ffe66d";
+  ctx.font = "900 32px Trebuchet MS";
+  ctx.fillText("HIDE UNDER A PLATFORM NOW!", canvas.width / 2, 240);
+  ctx.font = "700 18px Trebuchet MS";
+  var warningEndFrame = barrageWarningActive
+    ? barrageWarningEndFrame
+    : barrageEndFrame;
+  var warningLabel = barrageWarningActive ? "SHOOTING IN " : "BARRAGE ENDS IN ";
+  ctx.fillText(
+    warningLabel + Math.ceil((warningEndFrame - gameplayFrame) / frameRate),
+    canvas.width / 2,
+    278
+  );
+  ctx.textAlign = "left";
+}
+
+function updateCannonBarrage() {
+  if (
+    !barrageWarningActive &&
+    !barrageActive &&
+    gameplayFrame > 0 &&
+    gameplayFrame >= nextBarrageFrame
+  ) {
+    barrageWarningActive = true;
+    barrageWarningEndFrame = gameplayFrame + frameRate * 3;
+    projectiles = [];
+    playSiren();
+  } else if (
+    barrageWarningActive &&
+    gameplayFrame >= barrageWarningEndFrame
+  ) {
+    barrageWarningActive = false;
+    barrageActive = true;
+    barrageEndFrame = gameplayFrame + frameRate * 3;
+    barrageCannonCount = cannons.length;
+    cannons = cannons.concat(cannons.map(function (cannon) {
+      var extraCannon = Object.assign({}, cannon);
+      extraCannon.projectileCountdown = 0;
+      extraCannon.x += 24;
+      extraCannon.y += 24;
+      return extraCannon;
+    }));
+    playSiren();
+  } else if (barrageActive && gameplayFrame >= barrageEndFrame) {
+    barrageActive = false;
+    cannons = cannons.slice(0, barrageCannonCount);
+    nextBarrageFrame = gameplayFrame + frameRate * 5 + Math.floor(Math.random() * (frameRate * 10));
+  }
+}
+
+function playSiren() {
+  if (!audioContext) {
+    return;
+  }
+  var oscillator = audioContext.createOscillator();
+  var gain = audioContext.createGain();
+  oscillator.type = "square";
+  oscillator.frequency.setValueAtTime(260, audioContext.currentTime);
+  oscillator.frequency.linearRampToValueAtTime(920, audioContext.currentTime + 0.35);
+  oscillator.frequency.linearRampToValueAtTime(260, audioContext.currentTime + 0.7);
+  gain.gain.setValueAtTime(0.08, audioContext.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 1.2);
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+  oscillator.start();
+  oscillator.stop(audioContext.currentTime + 1.2);
+}
+
+function drawPellets() {
+  for (var i = 0; i < pellets.length; i++) {
+    if (pellets[i].collected) {
+      continue;
+    }
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(pellets[i].x, pellets[i].y, 6 + Math.sin(gameFrame * 0.1) * 1.5, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 
@@ -472,7 +864,9 @@ function drawPlatforms() {
 
     // Draw the platform
     const { color, x, y, width, height } = platforms[i];
-    ctx.fillStyle = color;
+    ctx.fillStyle = platforms[i].colorCycle
+      ? "hsl(" + ((gameFrame * 2 + i * 45) % 360) + ", 82%, 58%)"
+      : color;
     ctx.fillRect(x, y, width, height);
   }
 }
@@ -531,21 +925,136 @@ function makeGrid() {
 
 function drawProjectiles() {
   for (var i = 0; i < projectiles.length; i++) {
-    ctx.drawImage(
-      projectileImage,
-      projectiles[i].x,
-      projectiles[i].y,
-      projectiles[i].width,
-      projectiles[i].height
-    );
-    projectiles[i].x = projectiles[i].x + projectiles[i].speedX;
-    projectiles[i].y = projectiles[i].y + projectiles[i].speedY;
+    var projectile = projectiles[i];
+
+    if (projectile.exploding) {
+      ctx.fillStyle = "orange";
+      ctx.beginPath();
+      ctx.arc(
+        projectile.x + projectile.width / 2,
+        projectile.y + projectile.height / 2,
+        projectile.explosionRadius,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+      projectile.explosionFrames--;
+      if (projectile.explosionFrames <= 0) {
+        projectiles.splice(i, 1);
+        i--;
+      }
+      continue;
+    }
+
+    if (projectile.isTracking) {
+      var targetX = player.x + hitBoxWidth / 2 - projectile.x;
+      var targetY = player.y + hitBoxHeight / 2 - projectile.y;
+      var targetDistance = Math.sqrt(targetX * targetX + targetY * targetY);
+      var projectileVelocity = Math.sqrt(
+        projectile.speedX * projectile.speedX +
+          projectile.speedY * projectile.speedY
+      );
+      if (targetDistance > 0) {
+        projectile.speedX = (targetX / targetDistance) * projectileVelocity;
+        projectile.speedY = (targetY / targetDistance) * projectileVelocity;
+      }
+      projectile.fuseFrames--;
+      if (projectile.fuseFrames <= 0) {
+        projectile.exploding = true;
+        projectile.explosionFrames = 18;
+        projectile.explosionRadius = 24;
+        playSound("explode");
+        continue;
+      }
+    }
+
+    var nextX = projectile.x + projectile.speedX;
+    var nextY = projectile.y + projectile.speedY;
+    var bounced = false;
+
+    for (var platformIndex = 0; platformIndex < platforms.length; platformIndex++) {
+      var platform = platforms[platformIndex];
+      var overlapsPlatform =
+        nextX < platform.x + platform.width &&
+        nextX + projectile.width > platform.x &&
+        nextY < platform.y + platform.height &&
+        nextY + projectile.height > platform.y;
+
+      if (!overlapsPlatform) {
+        continue;
+      }
+
+      if (projectile.bounceCount >= 6 || Math.random() >= 0.2) {
+        projectile.exploding = true;
+        projectile.explosionFrames = 18;
+        projectile.explosionRadius = 24;
+        playSound("explode");
+        bounced = true;
+        break;
+      }
+
+      var hitFromSide =
+        projectile.x + projectile.width <= platform.x &&
+        nextX + projectile.width > platform.x;
+      var hitFromOtherSide =
+        projectile.x >= platform.x + platform.width &&
+        nextX < platform.x + platform.width;
+      var hitFromAbove =
+        projectile.y + projectile.height <= platform.y &&
+        nextY + projectile.height > platform.y;
+      var hitFromBelow =
+        projectile.y >= platform.y + platform.height &&
+        nextY < platform.y + platform.height;
+
+      if (hitFromSide || hitFromOtherSide) {
+        projectile.speedX *= -1;
+        projectile.x = hitFromSide
+          ? platform.x - projectile.width
+          : platform.x + platform.width;
+      } else if (hitFromAbove || hitFromBelow) {
+        projectile.speedY *= -1;
+        projectile.y = hitFromAbove
+          ? platform.y - projectile.height
+          : platform.y + platform.height;
+      } else {
+        projectile.speedX *= -1;
+        projectile.speedY *= -1;
+      }
+
+      projectile.bounceCount++;
+      nextX = projectile.x + projectile.speedX;
+      nextY = projectile.y + projectile.speedY;
+      bounced = true;
+      break;
+    }
+
+    if (!bounced) {
+      projectile.x = nextX;
+      projectile.y = nextY;
+    }
+
+    if (projectiles[i] === projectile) {
+      if (projectile.exploding) {
+        continue;
+      }
+      ctx.drawImage(
+        projectileImage,
+        projectile.x,
+        projectile.y,
+        projectile.width,
+        projectile.height
+      );
+    }
   }
 }
 
 function drawCannons() {
   for (var i = 0; i < cannons.length; i++) {
-    if (cannons[i].projectileCountdown >= cannons[i].timeBetweenShots) {
+    var shotInterval = barrageActive ? 3 : cannons[i].timeBetweenShots;
+    if (
+      !barrageWarningActive &&
+      cannons[i].projectileCountdown >= shotInterval
+    ) {
       cannons[i].projectileCountdown = 0;
       createProjectile(
         cannons[i].location,
@@ -554,6 +1063,14 @@ function drawCannons() {
         cannons[i].projectileWidth,
         cannons[i].projectileHeight
       );
+      if (barrageActive) {
+        projectiles[projectiles.length - 1].isTracking = false;
+      }
+      if (barrageActive) {
+        var barrageProjectile = projectiles[projectiles.length - 1];
+        barrageProjectile.speedX *= 2.5;
+        barrageProjectile.speedY *= 2.5;
+      }
     } else {
       cannons[i].projectileCountdown = cannons[i].projectileCountdown + 1;
     }
@@ -654,8 +1171,28 @@ function collectablesCollide() {
       collectables[i].y < player.y + hitBoxHeight &&
       collectables[i].y + collectableHeight > player.y
     ) {
-      collectables[i].collected = true;
+      if (!collectables[i].collected) {
+        collectables[i].collected = true;
+        score += 100;
+        playSound("collect");
+      }
       checkForWin();
+    }
+  }
+}
+
+function pelletsCollide() {
+  for (var i = 0; i < pellets.length; i++) {
+    if (
+      !pellets[i].collected &&
+      pellets[i].x > player.x - 8 &&
+      pellets[i].x < player.x + hitBoxWidth + 8 &&
+      pellets[i].y > player.y - 8 &&
+      pellets[i].y < player.y + hitBoxHeight + 8
+    ) {
+      pellets[i].collected = true;
+      score += 10;
+      playSound("pellet");
     }
   }
 }
@@ -673,32 +1210,24 @@ function checkForWin() {
 }
 
 function winGame() {
-  // If we reach this point, all collectables are collected
-  ctx.fillStyle = "grey";
-  ctx.fillRect(
-    canvas.width / 4,
-    canvas.height / 6,
-    canvas.width / 2,
-    canvas.height / 2
-  );
-  ctx.fillStyle = "white";
-  ctx.font = "800% serif";
-  ctx.fillText(
-    "You Win!",
-    canvas.width / 4,
-    canvas.height / 6 + canvas.height / 5,
-    (canvas.width / 16) * 14
-  );
-  ctx.font = "500% serif";
-  ctx.fillText(
-    "Hit any key to restart",
-    canvas.width / 4,
-    canvas.height / 6 + canvas.height / 3,
-    (canvas.width / 16) * 14
-  );
+  drawPacmanBackground();
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffe66d";
+  ctx.font = "900 64px Impact";
+  ctx.fillText("IMPOSSIBLE PARKOUR", canvas.width / 2, 245);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "700 34px Trebuchet MS";
+  ctx.fillText("You beat the impossible parkour game!", canvas.width / 2, 320);
+  ctx.fillStyle = "#ff9f1c";
+  ctx.font = "600 26px Trebuchet MS";
+  ctx.fillText("Final score: " + score, canvas.width / 2, 380);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "600 20px Trebuchet MS";
+  ctx.fillText("Press R to run it again", canvas.width / 2, 470);
+  ctx.textAlign = "left";
   if (keyPress.any) {
     keyPress.any = false;
-    window.location.reload();
+    resetGame();
   }
 }
 
@@ -729,7 +1258,12 @@ function createPlatform(
     speedY,
     directionX: 1, // 1 for right, -1 for left
     directionY: 1, // 1 for down, -1 for up
+    colorCycle: minX !== null || minY !== null,
   });
+}
+
+function createPellet(x, y) {
+  pellets.push({ x, y, collected: false });
 }
 
 function createFakePlatform(x, y, width, height, color = "grey") {
@@ -878,6 +1412,12 @@ function createProjectile(wallLocation, x, y, width, height) {
       speedY: projectileSpeed,
       width,
       height,
+      bounceCount: 0,
+      isTracking: Math.random() < 0.2,
+      fuseFrames: 180,
+      exploding: false,
+      explosionFrames: 0,
+      explosionRadius: 0,
     });
   } else if (wallLocation === "bottom") {
     projectiles.push({
@@ -887,6 +1427,12 @@ function createProjectile(wallLocation, x, y, width, height) {
       speedY: -projectileSpeed,
       width,
       height,
+      bounceCount: 0,
+      isTracking: Math.random() < 0.2,
+      fuseFrames: 180,
+      exploding: false,
+      explosionFrames: 0,
+      explosionRadius: 0,
     });
   } else if (wallLocation === "left") {
     projectiles.push({
@@ -896,6 +1442,12 @@ function createProjectile(wallLocation, x, y, width, height) {
       speedY: 0,
       width,
       height,
+      bounceCount: 0,
+      isTracking: Math.random() < 0.2,
+      fuseFrames: 180,
+      exploding: false,
+      explosionFrames: 0,
+      explosionRadius: 0,
     });
   } else if (wallLocation === "right") {
     projectiles.push({
@@ -905,6 +1457,12 @@ function createProjectile(wallLocation, x, y, width, height) {
       speedY: 0,
       width,
       height,
+      bounceCount: 0,
+      isTracking: Math.random() < 0.2,
+      fuseFrames: 180,
+      exploding: false,
+      explosionFrames: 0,
+      explosionRadius: 0,
     });
   }
 
@@ -915,6 +1473,9 @@ function createProjectile(wallLocation, x, y, width, height) {
 }
 
 function keyboardControlActions() {
+  var jumpHeld = keyPress.space || keyPress.up;
+  var jumpPressed = jumpHeld && !jumpKeyWasDown;
+  jumpKeyWasDown = jumpHeld;
   keyPress.any = false; //keyboardHandler will set this to true if you press any key. Setting the variable to false here makes sure that key press dosen't stick around.
   //this is used for respawning; if you hit any key after you die this variable will be set to true and you will respawn.
 
@@ -930,20 +1491,39 @@ function keyboardControlActions() {
     player.speedX += walkAcceleration;
     player.facingRight = true;
   }
-  if (keyPress.space || keyPress.up) {
-    if (player.onGround) {
+  if (player.onGround && (jumpPressed || jumpBufferFrames > 0)) {
       //this only lets you jump if you are on the ground
       player.speedY = player.speedY - playerJumpStrength;
       jumpTimer = 19; //this counts how many frames to have the jump last.
       player.onGround = false; //bug fix for jump animation, you have to change this or the jump animation doesn't work
       frameIndex = 4;
-    }
+      jumpBufferFrames = 0;
+  } else if (
+    jumpPressed &&
+    player.doubleJumpAvailable &&
+    player.powerModeFrames > 0 &&
+    !player.doubleJumpUsed
+  ) {
+    player.speedY = -playerJumpStrength;
+    player.doubleJumpUsed = true;
+    jumpTimer = 19;
+    frameIndex = 4;
+  }
+
+  if (jumpBufferFrames > 0) {
+    jumpBufferFrames--;
   }
 }
 
 function handleKeyDown(e) {
+  startAudio();
+  if (introActive) {
+    introActive = false;
+    playSound("collect");
+  }
   keyPress.any = true;
   if (e.key === "ArrowUp" || e.key === "w") {
+    jumpBufferFrames = 8;
     keyPress.up = true;
   }
   if (e.key === "ArrowLeft" || e.key === "a") {
@@ -956,6 +1536,7 @@ function handleKeyDown(e) {
     keyPress.right = true;
   }
   if (e.key === " ") {
+    jumpBufferFrames = 8;
     keyPress.space = true;
   }
 }

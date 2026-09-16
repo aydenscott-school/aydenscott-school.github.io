@@ -4,9 +4,29 @@ const gravity = 0.5; // how much is subtracted from speedY each frame
 const friction = 1.5; // how much the player is slowed each frame
 const maxSpeed = 8; // maximum horizontal speed, not vertical
 const playerJumpStrength = 12; // this is subtracted from the speedY each jump
-const projectileSpeed = 8; // the speed of projectiles
+const projectileSpeed = 5; // the speed of projectiles
 let shouldDrawGrid = false;
 let gridMade = false;
+let gameFrame = 0;
+let gameplayFrame = 0;
+let score = 0;
+let pellets = [];
+let introActive = true;
+let audioContext;
+let barrageWarningActive = false;
+let barrageActive = false;
+let barrageWarningEndFrame = 0;
+let barrageEndFrame = 0;
+let barrageCannonCount = 0;
+let nextBarrageFrame = 300;
+let powerCubes = [];
+let gambleActive = false;
+let gambleFrames = 0;
+let gambleResult = "speed";
+let gambleElapsed = 0;
+let gambleNextChange = 0;
+let gambleInterval = 2;
+let gambleRollIndex = 0;
 
 /////////////////////////////////////////////////
 //////////ONLY CHANGE ABOVE THIS POINT///////////
@@ -28,6 +48,11 @@ const player = {
   facingRight: true,
   deadAndDeathAnimationDone: false,
   winConditionMet: false,
+  doubleJumpAvailable: false,
+  doubleJumpUsed: false,
+  shieldActive: false,
+  speedBoostFrames: 0,
+  powerModeFrames: 0,
 };
 
 let hitDx;
@@ -35,6 +60,8 @@ let hitDy;
 let hitBoxWidth = 50 * playerScale;
 let hitBoxHeight = 105 * playerScale;
 let firstTimeSetup = true;
+let jumpKeyWasDown = false;
+let jumpBufferFrames = 0;
 
 const keyPress = {
   any: false,
