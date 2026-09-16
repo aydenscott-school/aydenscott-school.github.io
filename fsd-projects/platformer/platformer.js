@@ -157,3 +157,4 @@ createCollectable("max", 1320, 200, 0.5, 0.7);
 
   registerSetup(setup);
 });
+
