@@ -2,33 +2,315 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Bouncing Box</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#090d18" />
+    <title>Bouncing Box — Arcade</title>
     <script src="jquery.min.js"></script>
     <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: #f5f7ff;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
       .box {
-        width: 70px;
-        height: 70px;
-        background-color: teal;
-        font-size: 300%;
-        text-align: center;
+        display: grid;
+        width: 84px;
+        height: 84px;
+        place-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.7);
+        border-radius: 24px;
+        background: linear-gradient(145deg, #71f6dc, #20b8c5 58%, #4378f5);
+        box-shadow: 0 0 25px rgba(48, 220, 220, 0.35), inset 0 2px 2px rgba(255, 255, 255, 0.45);
+        color: #06121c;
+        font-size: 1.8rem;
+        font-weight: 850;
+        cursor: pointer;
         user-select: none;
-        display: block;
         position: absolute;
-        top: 100px;
-        /* Change me! */
-        left: 0px;
+        touch-action: manipulation;
+        transition: box-shadow 160ms ease, filter 160ms ease;
+        z-index: 1;
+      }
+
+      .box:hover {
+        filter: brightness(1.12);
+        box-shadow: 0 0 38px rgba(48, 220, 220, 0.6), inset 0 2px 2px rgba(255, 255, 255, 0.5);
+      }
+
+      .box:focus-visible {
+        outline: 3px solid white;
+        outline-offset: 5px;
       }
 
       .board {
+        position: relative;
+        width: 100%;
         height: 100vh;
+        min-height: 420px;
+        overflow: hidden;
+        background:
+          radial-gradient(ellipse at 50% 45%, rgba(35, 75, 120, 0.22), transparent 55%),
+          linear-gradient(rgba(139, 173, 221, 0.055) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(139, 173, 221, 0.055) 1px, transparent 1px),
+          #090d18;
+        background-size: auto, 40px 40px, 40px 40px, auto;
+      }
+
+      .game-header {
+        position: absolute;
+        top: 28px;
+        left: 32px;
+        z-index: 2;
+        pointer-events: none;
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        color: #73e8dd;
+        font-size: 0.7rem;
+        font-weight: 750;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(1.7rem, 4vw, 2.5rem);
+        letter-spacing: -0.06em;
+      }
+
+      .subtitle {
+        margin: 8px 0 0;
+        color: #98a5bd;
+        font-size: 0.9rem;
+      }
+
+      .game-stats {
+        position: absolute;
+        top: 30px;
+        right: 32px;
+        display: flex;
+        gap: 10px;
+        z-index: 2;
+        pointer-events: none;
+      }
+
+      .stat {
+        min-width: 90px;
+        padding: 10px 14px;
+        border: 1px solid rgba(155, 180, 218, 0.16);
+        border-radius: 14px;
+        background: rgba(18, 26, 43, 0.78);
+        backdrop-filter: blur(12px);
+      }
+
+      .stat-label {
+        display: block;
+        margin-bottom: 4px;
+        color: #8d9bb4;
+        font-size: 0.62rem;
+        font-weight: 700;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+      }
+
+      .stat-value {
+        color: #f5f7ff;
+        font-size: 1rem;
+        font-weight: 750;
+      }
+
+      .score-trigger {
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+        pointer-events: auto;
+      }
+
+      .score-trigger:hover {
+        border-color: rgba(115, 232, 221, 0.55);
+      }
+
+      .score-trigger:focus-visible,
+      .cheat-menu button:focus-visible,
+      .cheat-menu input:focus-visible {
+        outline: 2px solid #73e8dd;
+        outline-offset: 3px;
+      }
+
+      .cheat-menu[hidden] {
+        display: none;
+      }
+
+      .cheat-menu {
+        position: absolute;
+        top: 98px;
+        right: 32px;
+        z-index: 3;
+        width: min(320px, calc(100vw - 40px));
+        padding: 20px;
+        border: 1px solid rgba(115, 232, 221, 0.28);
+        border-radius: 18px;
+        background: rgba(18, 26, 43, 0.96);
+        box-shadow: 0 18px 55px rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(16px);
+      }
+
+      .cheat-menu h2 {
+        margin: 0;
+        font-size: 1.05rem;
+      }
+
+      .cheat-description {
+        margin: 7px 0 18px;
+        color: #98a5bd;
+        font-size: 0.8rem;
+        line-height: 1.5;
+      }
+
+      .rate-label {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        color: #dce5f6;
+        font-size: 0.8rem;
+        font-weight: 650;
+      }
+
+      .rate-label output {
+        color: #73e8dd;
+      }
+
+      .cheat-menu input[type="range"] {
+        width: 100%;
+        accent-color: #54dece;
+      }
+
+      .cheat-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 16px;
+      }
+
+      .cheat-menu button {
+        min-height: 38px;
+        padding: 0 12px;
+        border: 1px solid rgba(155, 180, 218, 0.22);
+        border-radius: 10px;
+        background: rgba(38, 51, 75, 0.85);
+        color: #f5f7ff;
+        font: inherit;
+        font-size: 0.8rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .cheat-menu button.primary {
+        flex: 1;
+        border-color: transparent;
+        background: linear-gradient(100deg, #71f6dc, #498af5);
+        color: #06121c;
+      }
+
+      .cheat-menu button:hover {
+        filter: brightness(1.12);
+      }
+
+      .cheat-status {
+        min-height: 1.2em;
+        margin: 12px 0 0;
+        color: #98a5bd;
+        font-size: 0.75rem;
+      }
+
+      .game-hint {
+        position: absolute;
+        right: 32px;
+        bottom: 26px;
+        left: 32px;
+        margin: 0;
+        color: #7f8ba3;
+        font-size: 0.78rem;
+        text-align: center;
+        pointer-events: none;
+      }
+
+      @media (max-width: 560px) {
+        .game-header {
+          top: 22px;
+          left: 20px;
+        }
+
+        .game-stats {
+          top: 116px;
+          right: auto;
+          left: 20px;
+        }
+
+        .cheat-menu {
+          top: 184px;
+          right: 20px;
+        }
+
+        .game-hint {
+          right: 20px;
+          bottom: 18px;
+          left: 20px;
+        }
+
+        .box {
+          width: 72px;
+          height: 72px;
+          border-radius: 21px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .box {
+          transition: none;
+        }
       }
     </style>
-    <!-- 	<script src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script> -->
   </head>
 
   <body class="board">
-    <!-- HTML for the box -->
-    <div class="box">?</div>
+    <header class="game-header">
+      <p class="eyebrow">Mini arcade · 01</p>
+      <h1>Bouncing Box</h1>
+      <p class="subtitle">Catch it if you can.</p>
+    </header>
+    <div class="game-stats" aria-live="polite">
+      <button class="stat score-trigger" id="score-trigger" type="button" aria-label="Score. Double-click to open the secret cheat menu" title="Double-click for a secret">
+        <span class="stat-label">Score</span>
+        <span class="stat-value" id="score">0</span>
+      </button>
+      <div class="stat">
+        <span class="stat-label">Speed</span>
+        <span class="stat-value" id="speed">5</span>
+      </div>
+    </div>
+    <section class="cheat-menu" id="cheat-menu" role="dialog" aria-labelledby="cheat-title" hidden>
+      <h2 id="cheat-title">Secret cheat menu</h2>
+      <p class="cheat-description">Let the game score for you. Choose how many points to earn per second.</p>
+      <label class="rate-label" for="click-rate">
+        <span>Auto-click rate</span>
+        <output id="click-rate-value" for="click-rate">10 clicks/sec</output>
+      </label>
+      <input id="click-rate" type="range" min="1" max="999999999999999999" step="1" value="10" />
+      <div class="cheat-actions">
+        <button class="primary" id="auto-click-toggle" type="button">Start auto-clicking</button>
+        <button id="cheat-close" type="button">Close</button>
+      </div>
+      <p class="cheat-status" id="cheat-status" aria-live="polite">Auto-clicking is off.</p>
+    </section>
+    <button class="box" type="button" aria-label="Catch the box to score a point">+</button>
+    <p class="game-hint">Click or tap the glowing box to score and make it move faster.</p>
 
     <script>
       (function () {
@@ -41,67 +323,134 @@
 
         var box = jQuery(".box"); // reference to the HTML .box element
         var board = jQuery(".board"); // reference to the HTML .board element
-        var boardWidth = board.width(); // the maximum X-Coordinate of the screen
+        var scoreDisplay = jQuery("#score");
+        var speedDisplay = jQuery("#speed");
+        var scoreTrigger = jQuery("#score-trigger");
+        var cheatMenu = jQuery("#cheat-menu");
+        var clickRate = jQuery("#click-rate");
+        var clickRateValue = jQuery("#click-rate-value");
+        var autoClickToggle = jQuery("#auto-click-toggle");
+        var cheatClose = jQuery("#cheat-close");
+        var cheatStatus = jQuery("#cheat-status");
+        var autoClickTimer = null;
 
-        // update the boardWidth variable when the window is resized
-        jQuery(window).on("resize", function () {
-          boardWidth = board.width();
-        });
+        // Update the box position about 60 times per second.
+        setInterval(update, 16);
 
-        // Every 50 milliseconds, call the update Function (see below)
-        setInterval(update, 50);
-
-        // Every time the box is clicked, call the handleBoxClick Function (see below)
+        // Every time the box is clicked, update the score and speed.
         box.on("click", handleBoxClick);
-
-        // moves the Box to a new position on the screen along the X-Axis
-        function moveBoxTo(newPositionX) {
-          box.css("left", newPositionX);
-        }
-
-        // changes the text displayed on the Box
-        function changeBoxText(newText) {
-          box.text(newText);
-        }
+        scoreTrigger.on("dblclick", openCheatMenu);
+        clickRate.on("input", updateClickRate);
+        autoClickToggle.on("click", toggleAutoClick);
+        cheatClose.on("click", closeCheatMenu);
+        jQuery(window).on("keydown", function (event) {
+          if (event.key === "Escape" && !cheatMenu.prop("hidden")) {
+            closeCheatMenu();
+            scoreTrigger.trigger("focus");
+          }
+        });
 
         //////////////////////////////////////////////////////////////////
         /////////////////// YOUR CODE BELOW HERE /////////////////////////
         //////////////////////////////////////////////////////////////////
 
         // TODO 2 - Variable declarations
+        var positionX = 56;
+        var positionY = 150;
+        var points = 0;
+        var speed = 5;
+        var velocityX = 4;
+        var velocityY = 3;
 
+        function openCheatMenu() {
+          cheatMenu.prop("hidden", false);
+          clickRate.trigger("focus");
+        }
 
+        function closeCheatMenu() {
+          cheatMenu.prop("hidden", true);
+        }
 
+        function updateClickRate() {
+          var clicksPerSecond = Number(clickRate.val());
+          clickRateValue.text(clicksPerSecond + " clicks/sec");
 
+          if (autoClickTimer !== null) {
+            clearInterval(autoClickTimer);
+            startAutoClicking(clicksPerSecond);
+          }
+        }
+
+        function startAutoClicking(clicksPerSecond) {
+          autoClickTimer = setInterval(handleBoxClick, Math.max(10, 1000 / clicksPerSecond));
+          autoClickToggle.text("Stop auto-clicking");
+          cheatStatus.text("Auto-clicking at up to " + clicksPerSecond + " clicks/sec.");
+        }
+
+        function toggleAutoClick() {
+          if (autoClickTimer !== null) {
+            clearInterval(autoClickTimer);
+            autoClickTimer = null;
+            autoClickToggle.text("Start auto-clicking");
+            cheatStatus.text("Auto-clicking is off.");
+            return;
+          }
+
+          startAutoClicking(Number(clickRate.val()));
+        }
 
         /**
-         * This Function will be called 20 times/second.
-         * Each time it is called, it should move the Box to a new location.
-         * If the box drifts off the screen, turn it around!
+         * Move the box in two dimensions and reverse its direction at each edge.
          */
         function update() {
+          var maxX = Math.max(0, board.innerWidth() - box.outerWidth());
+          var maxY = Math.max(0, board.innerHeight() - box.outerHeight());
 
-        
+          positionX += velocityX;
+          positionY += velocityY;
 
-          
+          if (positionX >= maxX) {
+            positionX = maxX;
+            velocityX = -Math.abs(velocityX);
+          } else if (positionX <= 0) {
+            positionX = 0;
+            velocityX = Math.abs(velocityX);
+          }
+
+          if (positionY >= maxY) {
+            positionY = maxY;
+            velocityY = -Math.abs(velocityY);
+          } else if (positionY <= 0) {
+            positionY = 0;
+            velocityY = Math.abs(velocityY);
+          }
+
+          box.css({ left: positionX, top: positionY });
         }
 
         /**
-         * This Function will be called each time the box is clicked.
-         * Each time it is called, it should perform each of the following actions:
-         * - increase the points total
-         * - increase the speed
-         * - move the box to the left side of the screen.
+         * Each successful catch adds a point and increases the box's velocity.
          */
         function handleBoxClick() {
+          points++;
+          speed = 5 + points * 0.6;
 
+          var currentSpeed = Math.sqrt(velocityX * velocityX + velocityY * velocityY);
+          velocityX = (velocityX / currentSpeed) * speed;
+          velocityY = (velocityY / currentSpeed) * speed;
 
-
-
+          scoreDisplay.text(points);
+          speedDisplay.text(speed.toFixed(1));
+          box.text(points);
         }
 
+        jQuery(window).on("resize", function () {
+          positionX = Math.min(positionX, Math.max(0, board.innerWidth() - box.outerWidth()));
+          positionY = Math.min(positionY, Math.max(0, board.innerHeight() - box.outerHeight()));
+          box.css({ left: positionX, top: positionY });
+        });
 
-        
+        box.css({ left: positionX, top: positionY });
       })();
     </script>
   </body>
